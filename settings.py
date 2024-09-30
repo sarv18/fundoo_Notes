@@ -7,6 +7,25 @@ class Settings(BaseSettings):
     (or from an .env file) and validate those settings.
     '''
     model_config = SettingsConfigDict(env_file= ".env", extra= "ignore")
+    
+    # Database settings
     db_url: str
+    
+    # JWT settings
+    secret_key: str 
+    algorithm: str 
+    access_token_expire_minutes: int
+    refresh_token_expire_minutes: int
+    
+     # Email settings
+    mail_username: str
+    mail_password: str
+    mail_from: str
+    mail_port: int
+    mail_server: str  
+    mail_from_name: str
+    mail_starttls: bool
+    mail_ssl_tls: bool
+    use_credentials: bool
     
 settings = Settings()
