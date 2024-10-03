@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException, Security, Request
 from sqlalchemy.orm import Session
-from .models import Note, get_db 
-from .schemas import CreateNote
+from .models import Note, get_db,Label
+from .schemas import CreateNote, CreateLabel
 from fastapi.security import APIKeyHeader
-from .utils import auth_user
+from .utils import auth_user, JwtUtils
 
 # Initialize FastAPI app with dependency
 app = FastAPI(dependencies= [Security(APIKeyHeader(name= "Authorization", auto_error= False)), Depends(auth_user)])
@@ -37,7 +37,7 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
     
     db.add(new_note)
     db.commit()
-    db.refresh(new_note)
+    db.refresh(new_note)    
     return {
         "message": "Note created successfully",
         "status": "success",
@@ -233,3 +233,84 @@ def get_trashed_notes(request: Request, db: Session = Depends(get_db)):
         "status": "success",
         "data": trashed_notes
         }
+    
+
+# CREATE label
+@app.post("/labels/")
+def create_label(request: Request, label: CreateLabel, db: Session = Depends(get_db)):
+    
+    try:
+        data = label.model_dump()
+        data.update(user_id = request.state.user["id"])
+        
+        new_label = Label(**data)
+        
+        db.add(new_label)
+        db.commit()
+        db.refresh(new_label)
+        return {
+            "message": "Label created successfully",
+            "status": "success",
+            "data": new_label
+        }
+    except Exception:
+        raise HTTPException(status_code=400, detail= "Failed to create label")
+        
+    
+# GET labels
+@app.get("/labels/")
+def get_labels(request: Request, db: Session = Depends(get_db)):
+    
+    try:
+        labels = db.query(Label).filter(Label.user_id == request.state.user["id"]).all()
+        if not labels:
+            return {
+                "message": f"No labels found", 
+                "status": "success"
+                }
+             
+        return {
+            "message" : f"Labes fetched successfully",
+            "status": "success",
+            "data": labels
+        }
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to fetch labels" )
+    
+# UPDATE label
+@app.put("/labels/{label_id}")
+def update_label(label_id: int, label: CreateLabel, db: Session= Depends(get_db)):
+    
+    label_data = db.query(Label).filter(Label.id == label_id).first()
+    if not label_data:
+        raise HTTPException(status_code=404, detail= f"Lable with ID {label_id} not found")
+    
+    for key, value in label.model_dump().items():
+        setattr(label_data, key, value)
+        
+    db.commit()
+    db.refresh(label_data)
+    
+    return {
+        "message": "Label updated successfully",
+        "status": "success",
+        "data": label_data  
+    }
+    
+    
+# DELETE label
+@app.delete("/labels/{label_id}")
+def delete_label(label_id: int, db: Session = Depends(get_db)):
+    
+    label_data = db.query(Label).filter(Label.id == label_id).first()
+    if not label_data:
+        raise HTTPException(status_code=404, detail= "Label not found")
+    
+    db.delete(label_data)
+    db.commit()
+    
+    return {
+        "message": "Label deleted successfully", 
+        "status": "success",
+        "data": label_data
+    }

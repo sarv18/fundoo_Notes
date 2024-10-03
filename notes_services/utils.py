@@ -1,7 +1,6 @@
 import requests as http
 from fastapi import Request, HTTPException
 
-
 def auth_user(request: Request):
     token = request.headers.get("Authorization")
     response = http.get(url= f"http://127.0.0.1:8000/user/{token}")

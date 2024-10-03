@@ -10,3 +10,9 @@ class CreateNote(BaseModel):
     is_archive: bool= False
     is_trash: bool= False
     reminder: datetime | None= None
+    
+# Schema for creating new label
+class CreateLabel(BaseModel):
+   
+    name: str
+    color: str

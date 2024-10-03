@@ -28,3 +28,12 @@ class Note(Base):
     is_trash = Column(Boolean, default=False, index=True)
     reminder = Column(DateTime, nullable=True)
     user_id = Column(BigInteger, nullable=False, index=True)
+    
+
+class Label(Base):
+    __tablename__ = "labels"
+    
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True, nullable=False)
+    name = Column(String, nullable=False)
+    color = Column(String, nullable=True)
+    user_id = Column(BigInteger, nullable=False, index=True)
