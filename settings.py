@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     
     # Database settings
     db_url: str
+    notes_db_url: str
     
     # JWT settings
     secret_key: str 

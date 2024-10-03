@@ -87,7 +87,7 @@ def login_user(user: UserLoginSchema, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid email or password")
 
     # Generate both JWT tokens
-    access_token, refresh_token = create_tokens({"sub": db_user.email})
+    access_token, refresh_token = create_tokens({"sub": db_user.email, "user_id": db_user.id})
 
     return {
         "message": "Login successful",
@@ -125,3 +125,27 @@ def verify_registered_user(token: str, db: Session = Depends(get_db)):
 
     except Exception:
         raise HTTPException(status_code=400, detail="Token has expired or is invalid")
+
+@app.get("/user/{token}",status_code= 200, include_in_schema= False)
+def auth_user(token: str, db: Session = Depends(get_db)):
+    try:
+        # Decode the JWT token to get payload
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        # print(payload)
+        user_id: int = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Invalid User ID")
+        
+        # Fetch user details from the database based on user_id from token
+        db_user = db.query(User).filter(User.id == user_id).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail= "User not found")
+        
+        # Return user details in JSON format
+        return {
+            "message": "Authorizaton successful",
+            "status": "success",
+            "data": db_user
+        }
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
