@@ -29,6 +29,10 @@ class Note(Base):
     reminder = Column(DateTime, nullable=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     
+    @property
+    def to_dict(self):
+        return {col.name: getattr(self, col.name) for col in self.__table__.columns} 
+
 
 class Label(Base):
     __tablename__ = "labels"

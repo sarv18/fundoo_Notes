@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException, Security, Request
 from sqlalchemy.orm import Session
-from .models import Note, get_db,Label
+from .models import Note, get_db, Label
 from .schemas import CreateNote, CreateLabel
 from fastapi.security import APIKeyHeader
-from .utils import auth_user, JwtUtils
+from .utils import auth_user, RedisUtils
 
 # Initialize FastAPI app with dependency
 app = FastAPI(dependencies= [Security(APIKeyHeader(name= "Authorization", auto_error= False)), Depends(auth_user)])
@@ -31,13 +31,18 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
     The newly created note instance with its details.
 '''
     data = note.model_dump()
-    data.update(user_id = request.state.user["id"])
+    user_id = request.state.user["id"]
+    data.update(user_id = user_id)
     
     new_note = Note(**data)
     
     db.add(new_note)
     db.commit()
-    db.refresh(new_note)    
+    db.refresh(new_note)
+    
+    # Save note to Redis cache
+    RedisUtils.save(key= f"user_{user_id}", field= new_note.id, value= new_note.to_dict)
+    
     return {
         "message": "Note created successfully",
         "status": "success",
@@ -47,26 +52,33 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
 
 # GET all notes
 @app.get("/notes/")
-def get_notes(request: Request,  db: Session = Depends(get_db)):
+def get_notes(request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
-    This function retrieves a list of notes with pagination (skip and limit).
+    This function retrieves a list of notes.
     Parameters: 
     db: The database session to interact with the database.
     Return: 
-    A list of notes within the given range (based on skip and limit).
+    A list of notes.
     '''
-    #print(request.state.user)
-    user_data = request.state.user
+    user_id = request.state.user["id"]
     
-    # Get user_id from response
-    user_id = user_data["id"] 
+    # Check Redis cache for notes
+    cached_notes = RedisUtils.get(key= f"user_{user_id}")
+    if cached_notes:
+        return {
+            "message": "Notes fetched from cache", 
+            "status": "success",
+            "data": cached_notes
+            }
     
-    # Query notes that belong to the authenticated user
+    # If cache is empty, fetch notes from the database
     notes = db.query(Note).filter(Note.user_id == user_id).all()
-    
+    if not notes:
+        raise HTTPException(status_code=404, detail="No notes found")
+
     return {
-        "message": "All notes of user",
+        "message": "Notes fetched from database",
         "status": "success",
         "data": notes
     }
@@ -94,6 +106,10 @@ def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(ge
     
     db.commit()
     db.refresh(note)
+    
+    # Update the note in Redis cache
+    RedisUtils.save(key= f"user_{note.user_id}", field= note.id, value= note.to_dict)
+    
     return {
         "message": "Note updated successfully",
         "status": "success",
@@ -103,7 +119,7 @@ def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(ge
 
 # DELETE Note
 @app.delete("/notes/{note_id}")
-def delete_note(note_id: int, db: Session = Depends(get_db)):
+def delete_note(request: Request, note_id: int, db: Session = Depends(get_db)):
     '''
     Description: 
     This function deletes a note by its ID. If not found, raises a 404 error.
@@ -120,10 +136,13 @@ def delete_note(note_id: int, db: Session = Depends(get_db)):
     
     db.delete(note)
     db.commit()
+    
+    # Delete note from Redis cache
+    RedisUtils.delete(key= f"user_{request.state.user['id']}", field= note_id)
+    
     return {
         "message": "Note deleted successfully!",
         "status": "success",
-        "data": note
         }
     
     
