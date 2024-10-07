@@ -5,6 +5,7 @@ from .models import User, get_db
 from .schemas import UserRegistrationSchema, UserLoginSchema 
 from .utils import hash_password, verify_password, create_token, create_tokens, send_verification_email
 from settings import settings
+from tasks import send_mail
 
 
 # Initialize FastAPI app
@@ -21,7 +22,7 @@ def read_root():
 
 # Register a new user
 @app.post("/register")
-def register_user(request: Request, user: UserRegistrationSchema, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def register_user(request: Request, user: UserRegistrationSchema,  db: Session = Depends(get_db)):
     '''
     Discription: Registers a new user after validating the input, checking if the user exists, 
     hashing the password, and storing the user in the database.
@@ -61,8 +62,8 @@ def register_user(request: Request, user: UserRegistrationSchema, background_tas
     verify_link = request.url_for('verify_registered_user', token= access_token)
         
     # Send verification email using the utility function
-    background_tasks.add_task(send_verification_email, db_user.email, verify_link)
-    
+    # background_tasks.add_task(send_verification_email, db_user.email, verify_link)
+    send_mail.delay(db_user.email, str(verify_link))
     return {
         "message": "User registered successfully",
         "status": "success",
@@ -88,7 +89,7 @@ def login_user(user: UserLoginSchema, db: Session = Depends(get_db)):
 
     # Generate both JWT tokens
     access_token, refresh_token = create_tokens({"sub": db_user.email, "user_id": db_user.id})
-
+    
     return {
         "message": "Login successful",
         "status": "success",

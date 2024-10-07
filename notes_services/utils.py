@@ -2,10 +2,11 @@ import requests as http
 from fastapi import Request, HTTPException
 import redis
 import json
+from settings import settings
 
 def auth_user(request: Request):
     token = request.headers.get("Authorization")
-    response = http.get(url= f"http://127.0.0.1:8000/user/{token}")
+    response = http.get(url= f"{settings.endpoint}{token}")
     if response.status_code >= 400:
         raise HTTPException(status_code=response.status_code, detail= "Invalid User")
     

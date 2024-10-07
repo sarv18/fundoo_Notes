@@ -29,4 +29,9 @@ class Settings(BaseSettings):
     mail_ssl_tls: bool
     use_credentials: bool
     
+    # Authentication endpoint
+    endpoint: str
+    
+    # Celery Broker 
+    celery_broker: str
 settings = Settings()
