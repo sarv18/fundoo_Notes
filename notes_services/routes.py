@@ -23,12 +23,14 @@ def read_root():
 def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db)):
     '''
     Description: 
-    This function creates a new note with the provided title, description and color. The user_id is hardcoded.
+    This function creates a new note with the provided title, description and color,
+    and associates it with the authenticated user.
     Parameters: 
+    request: The incoming request containing user information.
     note: A `CreateNote` schema instance containing the note details.
     db: The database session to interact with the database.
     Return: 
-    The newly created note instance with its details.
+    dict: A dictionary containing a success message and the newly created note details.
 '''
     data = note.model_dump()
     user_id = request.state.user["id"]
@@ -55,11 +57,13 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
 def get_notes(request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
-    This function retrieves a list of notes.
+    This function retrieves a list of all notes for the authenticated user. 
+    It first checks the Redis cache for stored notes; if none are found, it fetches from the database.
     Parameters: 
+    request: The incoming request containing user information.
     db: The database session to interact with the database.
     Return: 
-    A list of notes.
+    dict: A dictionary containing a success message and a list of notes either from the cache or the database.
     '''
     user_id = request.state.user["id"]
     
@@ -95,7 +99,7 @@ def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(ge
     updated_note: A `CreateNote` schema instance containing the updated details.
     db: The database session to interact with the database.
     Return: 
-    The updated note object after saving the changes.
+    dict: A dictionary containing a success message and the updated note details.
     '''
     note = db.query(Note).filter(Note.id == note_id).first()
     if not note:
@@ -124,10 +128,11 @@ def delete_note(request: Request, note_id: int, db: Session = Depends(get_db)):
     Description: 
     This function deletes a note by its ID. If not found, raises a 404 error.
     Parameters: 
+    request: The incoming request containing user information.
     note_id: The ID of the note to delete.
     db: The database session to interact with the database.
     Return: 
-    A success message confirming the deletion of the note.
+    dict: A success message confirming the deletion of the note.
     '''
 
     note = db.query(Note).filter(Note.id == note_id).first()
@@ -157,7 +162,7 @@ def toggle_archive(note_id: int, request: Request, db: Session = Depends(get_db)
     request: Contains the authenticated user information.
     db: The database session to interact with the database.
     Return: 
-    Updated note with the toggled archive status.
+    dict: A success message along with the updated note details reflecting the archive status.
     '''
     user_id = request.state.user["id"]
 
@@ -187,7 +192,7 @@ def get_archived_notes(request: Request, db: Session = Depends(get_db)):
     request: Contains the authenticated user information.
     db: The database session to interact with the database.
     Return: 
-    List of all archived notes.
+    dict: A list of all archived notes.
     '''
     user_id = request.state.user["id"]
 
@@ -211,7 +216,7 @@ def toggle_trash(note_id: int, request: Request, db: Session = Depends(get_db)):
     request: Contains the authenticated user information.
     db: The database session to interact with the database.
     Return: 
-    Updated note with the toggled trash status.
+    dict: A success message along with the updated note details reflecting the trash status.
     '''
     user_id = request.state.user["id"]
 
@@ -241,7 +246,7 @@ def get_trashed_notes(request: Request, db: Session = Depends(get_db)):
     request: Contains the authenticated user information.
     db: The database session to interact with the database.
     Return: 
-    List of all trashed notes.
+    dict: A list of all trashed notes.
     '''
     user_id = request.state.user["id"]
 
@@ -257,7 +262,16 @@ def get_trashed_notes(request: Request, db: Session = Depends(get_db)):
 # CREATE label
 @app.post("/labels/")
 def create_label(request: Request, label: CreateLabel, db: Session = Depends(get_db)):
-    
+    '''
+    Description:
+    This function creates a new label with the provided name and color for the authenticated user.
+    Parameters:
+    request: Contains the authenticated user information from the JWT token.
+    label: A `CreateLabel` schema instance containing the label details (name, color).
+    db: The database session to interact with the database.
+    Return:
+    dict: A success message and the newly created label instance or raise exception.
+    '''
     try:
         data = label.model_dump()
         data.update(user_id = request.state.user["id"])
@@ -279,12 +293,21 @@ def create_label(request: Request, label: CreateLabel, db: Session = Depends(get
 # GET labels
 @app.get("/labels/")
 def get_labels(request: Request, db: Session = Depends(get_db)):
-    
+    '''
+    Description:
+    This function retrieves all labels created by the authenticated user.
+    Parameters:
+    request: Contains the authenticated user information from the JWT token.
+    db: The database session to interact with the database.
+    Return:
+    dict: A success message and a list of all labels created by the user, 
+    or a message if no labels are found.
+    '''
     try:
         labels = db.query(Label).filter(Label.user_id == request.state.user["id"]).all()
         if not labels:
             return {
-                "message": f"No labels found", 
+                "message": "No labels found", 
                 "status": "success"
                 }
              
@@ -299,7 +322,16 @@ def get_labels(request: Request, db: Session = Depends(get_db)):
 # UPDATE label
 @app.put("/labels/{label_id}")
 def update_label(label_id: int, label: CreateLabel, db: Session= Depends(get_db)):
-    
+    '''
+    Description:
+    This function updates an existing label's details (name, color) based on its ID. If the label is not found, a 404 error is raised.
+    Parameters:
+    label_id: The ID of the label to update.
+    label: A `CreateLabel` schema instance containing the updated label details (name, color).
+    db: The database session to interact with the database.
+    Return:
+    dict: A success message and the updated label instance.
+    '''
     label_data = db.query(Label).filter(Label.id == label_id).first()
     if not label_data:
         raise HTTPException(status_code=404, detail= f"Lable with ID {label_id} not found")
@@ -320,7 +352,15 @@ def update_label(label_id: int, label: CreateLabel, db: Session= Depends(get_db)
 # DELETE label
 @app.delete("/labels/{label_id}")
 def delete_label(label_id: int, db: Session = Depends(get_db)):
-    
+    '''
+    Description:
+    This function deletes a label by its ID. If the label is not found, a 404 error is raised.
+    Parameters:
+    label_id: The ID of the label to delete.
+    db: The database session to interact with the database.
+    Return:
+    A success message confirming the deletion of the label.
+    '''
     label_data = db.query(Label).filter(Label.id == label_id).first()
     if not label_data:
         raise HTTPException(status_code=404, detail= "Label not found")
@@ -330,6 +370,5 @@ def delete_label(label_id: int, db: Session = Depends(get_db)):
     
     return {
         "message": "Label deleted successfully", 
-        "status": "success",
-        "data": label_data
+        "status": "success"
     }
