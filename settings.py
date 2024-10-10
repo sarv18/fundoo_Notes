@@ -39,4 +39,8 @@ class Settings(BaseSettings):
     
     # Celery Broker 
     celery_broker: str
+    
+    # Redbeat redis url
+    redbeat_redis_url: str
+    
 settings = Settings()

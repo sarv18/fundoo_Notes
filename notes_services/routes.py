@@ -5,6 +5,9 @@ from .schemas import CreateNote, CreateLabel
 from fastapi.security import APIKeyHeader
 from .utils import auth_user, RedisUtils
 from settings import logger
+from redbeat import RedBeatSchedulerEntry
+from celery.schedules import crontab
+from tasks import celery
 
 # Initialize FastAPI app with dependency
 app = FastAPI(dependencies= [Security(APIKeyHeader(name= "Authorization", auto_error= False)), Depends(auth_user)])
@@ -38,7 +41,7 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
         data = note.model_dump()
         user_id = request.state.user["id"]
         data.update(user_id=user_id)
-
+        
         new_note = Note(**data)
 
         db.add(new_note)
@@ -48,6 +51,27 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
         # Save note to Redis cache
         RedisUtils.save(key=f"user_{user_id}", field=new_note.id, value=new_note.to_dict)
 
+        # If there's a reminder, schedule the reminder email
+        if new_note.reminder:
+            
+            # Reminder timestamp as a string
+            reminder_str = new_note.reminder
+            task_name = f"reminder_task_{new_note.id}"
+        
+            entry = RedBeatSchedulerEntry(
+                name=task_name,
+                task= 'tasks.send_email', 
+                schedule= crontab(
+                    minute= reminder_str.minute, 
+                    hour= reminder_str.hour,
+                    day_of_month= reminder_str.day,
+                    month_of_year= reminder_str.month
+                ),
+                app= celery,
+                args=(request.state.user["email"], "create_reminder", {'note_id': new_note.id})
+            )
+            entry.save()
+
         logger.info(f"Note created successfully for user {user_id}")
         return {
             "message": "Note created successfully",
@@ -56,7 +80,7 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
         }
         
     except Exception as e:
-        logger.error(f"Error creating note: {e}")
+        logger.exception(f"Error creating note: {e}")
         raise HTTPException(status_code=500, detail="Failed to create note")
 
 
@@ -105,7 +129,7 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
 
 # UPDATE Note
 @app.put("/notes/{note_id}")
-def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(get_db)):
+def update_note(request: Request, note_id: int, updated_note: CreateNote, db: Session = Depends(get_db)):
     '''
     Description: 
     This function updates an existing note's details by its ID. If not found, raises a 404 error.
@@ -129,6 +153,27 @@ def update_note(note_id: int, updated_note: CreateNote, db: Session = Depends(ge
 
         # Update note in Redis cache
         RedisUtils.save(key=f"user_{note.user_id}", field=note.id, value=note.to_dict)
+
+        # If there's a reminder, schedule the reminder email
+        if note.reminder:
+            
+            # Reminder timestamp as a string
+            reminder_str = note.reminder
+            task_name = f"reminder_update_task_{note.id}"
+            
+            entry = RedBeatSchedulerEntry(
+                name=task_name,
+                task= 'tasks.send_email', 
+                schedule= crontab(
+                    minute= reminder_str.minute, 
+                    hour= reminder_str.hour,
+                    day_of_month= reminder_str.day,
+                    month_of_year= reminder_str.month
+                ),
+                app= celery,
+                args=(request.state.user["email"], "update_reminder", {'note_id': note.id})
+            )
+            entry.save()
 
         logger.info(f"Note {note_id} updated successfully")
         return {

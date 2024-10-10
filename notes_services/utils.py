@@ -3,6 +3,21 @@ from fastapi import Request, HTTPException
 import redis
 import json
 from settings import settings, logger
+from fastapi_mail import ConnectionConfig, FastMail, MessageSchema
+
+# Email configuration
+conf = ConnectionConfig(
+    MAIL_USERNAME = settings.mail_username,
+    MAIL_PASSWORD = settings.mail_password,
+    MAIL_FROM = settings.mail_from,
+    MAIL_PORT = settings.mail_port,
+    MAIL_SERVER = settings.mail_server,  
+    MAIL_FROM_NAME = settings.mail_from_name,
+    MAIL_STARTTLS = settings.mail_starttls,
+    MAIL_SSL_TLS = settings.mail_ssl_tls,
+    USE_CREDENTIALS = settings.use_credentials
+)
+
 
 def auth_user(request: Request):
     """
@@ -104,3 +119,43 @@ class RedisUtils():
         except Exception as e:
             logger.error(f"Error deleting data from Redis key: {key}, field: {field}. Error: {str(e)}")
             raise
+        
+        
+# Function to send reminder email asynchronously
+async def send_note_reminder_email(email, note_id, email_type):
+    """
+    Description:
+    Sends a reminder email to the user for either creating or updating a note.
+    Parameters:
+    email : The email address of the user to send the reminder link to.
+    note_id : The ID of the note.
+    email_type : The type of email ('create' or 'update').
+    Return: None
+    """
+    try:
+        # Determine the subject and body based on the email type
+        if email_type == "create":
+            subject = "Note - Create note reminder email"
+            body = f"Create note reminder for: Note {note_id}"
+        elif email_type == "update":
+            subject = "Note - Update note reminder email"
+            body = f"Update note reminder for: Note {note_id}"
+        else:
+            raise ValueError("Invalid email_type. Must be 'create' or 'update'.")
+
+        # Create the email message
+        message = MessageSchema(
+            subject=subject,
+            recipients=[email],
+            body=body,
+            subtype="html"
+        )
+
+        # Initialize FastMail instance and send email
+        fm = FastMail(conf)
+        await fm.send_message(message)
+        logger.info(f"{email_type.capitalize()} note reminder email sent to {email}.")
+
+    except Exception as e:
+        logger.error(f"Error while sending {email_type} note reminder email to {email}: {str(e)}")
+        raise ValueError(f"Failed to send {email_type} note reminder email.")

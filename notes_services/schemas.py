@@ -12,7 +12,7 @@ class CreateNote(BaseModel):
     color: str
     is_archive: bool= False
     is_trash: bool= False
-    reminder: datetime | None= None
+    reminder: datetime = datetime.now()
     
 # Schema for creating new label
 class CreateLabel(BaseModel):

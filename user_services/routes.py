@@ -1,11 +1,11 @@
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from .models import User, get_db
 from .schemas import UserRegistrationSchema, UserLoginSchema 
-from .utils import hash_password, verify_password, create_token, create_tokens, send_verification_email
+from .utils import hash_password, verify_password, create_token, create_tokens
 from settings import settings, logger
-from tasks import send_mail
+from tasks import send_email
 from sqlalchemy.exc import SQLAlchemyError
 
 
@@ -65,7 +65,7 @@ def register_user(request: Request, user: UserRegistrationSchema,  db: Session =
         verify_link = request.url_for('verify_registered_user', token=access_token)
 
         # Send verification email using Celery task
-        send_mail.delay(db_user.email, str(verify_link))
+        send_email.delay(email= db_user.email, email_type= "verification",  extra_data= str(verify_link))
 
         logger.info(f"User registered: {user.email}")
         return {
