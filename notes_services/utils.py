@@ -76,7 +76,7 @@ class RedisUtils():
             raise
     
     @classmethod
-    def get(self, key):
+    def get(self, key, field= None):
         """
         Description:
         Retrieves data from Redis. If multiple fields are stored, all are fetched using `hgetall`.
@@ -86,15 +86,25 @@ class RedisUtils():
         dict: A dictionary of values stored in the Redis hash (as dictionaries).
         """
         try:
-            data = self.r.hgetall(key)
-            if not data:
-                logger.warning(f"No data found in Redis for key: {key}")
-                return []
-            logger.info(f"Data retrieved from Redis key: {key}")
-            return [json.loads(x) for x in data.values()]
+            if field:
+                # Get a specific field
+                data = self.r.hget(key, field)
+                if data is None:
+                    logger.warning(f"No data found in Redis for key: {key}, field: {field}")
+                    return None
+                logger.info(f"Data retrieved from Redis key: {key}, field: {field}")
+                return json.loads(data)
+            else:
+                # Get all fields
+                data = self.r.hgetall(key)
+                if not data:
+                    logger.warning(f"No data found in Redis for key: {key}")
+                    return None
+                logger.info(f"Data retrieved from Redis key: {key}")
+                return [json.loads(x) for x in data.values()]
         except Exception as e:
             logger.error(f"Error retrieving data from Redis key: {key}. Error: {str(e)}")
-            raise
+            return None
         
     @classmethod
     def delete(self, key, field=None):
