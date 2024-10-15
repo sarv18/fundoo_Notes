@@ -1,5 +1,5 @@
 import jwt
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from .models import User, get_db
 from .schemas import UserRegistrationSchema, UserLoginSchema 
@@ -7,7 +7,7 @@ from .utils import hash_password, verify_password, create_token, create_tokens
 from settings import settings, logger
 from tasks import send_email
 from sqlalchemy.exc import SQLAlchemyError
-
+from typing import List
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -180,7 +180,7 @@ def verify_registered_user(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/user/{token}",status_code= 200, include_in_schema= False)
+@app.get("/user/{token}", status_code= 200, include_in_schema= False)
 def auth_user(token: str, db: Session = Depends(get_db)):
     '''
     Description: Decodes the JWT token and fetches the authenticated user's data from the database.
@@ -230,3 +230,37 @@ def auth_user(token: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Unexpected error during user authentication: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+
+@app.get('/users', status_code=200, include_in_schema= False)
+def get_users(user_ids : List[int] = Query([]), db : Session = Depends(get_db)):
+    '''
+    Description:
+    This API retrieves user data for the specified user IDs.
+    Parameters:
+    user_ids: List of user IDs to fetch data for.
+    db: Database session for querying user data.
+    Returns:
+    dict: A dictionary containing user data for the specified IDs.
+    '''
+    try:
+        users = db.query(User).filter(User.id.in_(user_ids)).all()
+        logger.info("Fetching all users from database")
+
+        if not users:
+            logger.info("Some of the user is not found from databse")
+            raise HTTPException(status_code=404, detail="User not found with user ID.")
+        
+        # It gives the dict of every user of given payload.user_id from database
+        users = [user.to_dict for user in users]
+
+        # Return the success meassage
+        return {
+            "message" : "User found successfully.", 
+            "status" : "Success",
+            "data" : users
+        }
+    
+    except Exception as e:
+        logger.error(f"Error while fetching the users : {e}")
+        raise HTTPException(status_code=400, detail=f"Error while fetching the users : {e}")

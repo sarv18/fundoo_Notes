@@ -1,13 +1,18 @@
 from fastapi import FastAPI, Depends, HTTPException, Security, Request
 from sqlalchemy.orm import Session
-from .models import Note, get_db, Label, AddNoteLabels
-from .schemas import CreateNote, CreateLabel
+from .models import Note, get_db, Label
+from .schemas import CreateNote, CreateLabel, AddNoteLabels, AddCollaborators, RemoveCollaborators
 from fastapi.security import APIKeyHeader
 from .utils import auth_user, RedisUtils
-from settings import logger
+from settings import logger, settings
 from redbeat import RedBeatSchedulerEntry
 from celery.schedules import crontab
 from tasks import celery
+from sqlalchemy.orm.attributes import flag_modified
+import requests as http
+# from sqlalchemy import cast, JSON
+# import json
+
 
 # Initialize FastAPI app with dependency
 app = FastAPI(dependencies= [Security(APIKeyHeader(name= "Authorization", auto_error= False)), Depends(auth_user)])
@@ -113,6 +118,11 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
             # Query to get all notes for the user, eager load labels
             notes = db.query(Note).filter(Note.user_id == user_id).all()
 
+            # notes = db.query(Note).filter(
+            #     (Note.user_id == user_id) |  # Owned by user
+            #     (cast(Note.collaborators, JSON).op('@>')(json.dumps({str(user_id): True})))  # Collaborator
+            # ).all()
+            
             if not notes:
                 # If no notes found in the database
                 logger.warning(f"No notes found in the database for user ID: {user_id}")
@@ -623,3 +633,155 @@ def remove_labels_from_note(request: Request, label_data: AddNoteLabels, note_id
     except Exception as error:
         logger.error(f"Error while removing labels from note {note_id} for user {user_id}: {error}")
         raise HTTPException(status_code= 500, detail="Error removing labels")
+    
+    
+# ADD Collaborator to notes    
+@app.patch('/notes/add-collaborators')
+def add_collaborators(request : Request, collab_data : AddCollaborators, db : Session = Depends(get_db)):
+    """
+    Description:
+    This function is used for adding collaborators from notes
+    Parameters:
+    request : The incoming request object.
+    collab_data : A AddCollaborator schema add to access user ids.
+    db : The database session dependency.
+    Return:
+    Return the success message with collaborator add from notes
+    """
+    try:
+        # Fetching user id from request.state
+        user_id = request.state.user["id"]
+
+        # Fetching note for particular user based on note id provided by user
+        note = db.query(Note).filter(Note.id == collab_data.note_id, Note.user_id == user_id).first()
+        logger.info(f"Feteching note based Note ID : {collab_data.note_id} and user ID : {user_id}")
+
+        # If note not found
+        if not note:
+            logger.info(f"Note is not found for note ID : {collab_data.note_id}")
+            raise HTTPException(status_code=404, detail=f"Note not found in database for user ID : {user_id} wiht note ID: {collab_data.note_id}")
+
+        # User can not add themselves as collaborator
+        if user_id in collab_data.user_ids:
+            logger.info(f"User ID {user_id} cannot add themselves as a collaborator.")
+            raise HTTPException(status_code=400, detail="You cannot add yourself as a collaborator.") 
+        
+        # Making HTTP request to user_Services to validate the users 
+        user_service_url = settings.user_services_url
+        response = http.get(user_service_url, params = {"user_ids" : collab_data.user_ids})
+       
+        # It chaecks the response is not satisfying then raise error
+        if response.status_code != 200:
+            logger.info(f"Some of the users are not found of user ID : {collab_data.user_ids}")
+            raise HTTPException(status_code=400, detail="Some of the uses not found")
+        
+        # Getting user data in json format form response  
+        user_data = response.json()["data"]
+
+        # Checking for all user data is retrived from user services or not
+        if len(user_data) != len(collab_data.user_ids):
+            logger.info("Some of the users are not found from database")
+            raise HTTPException("Some of the users are not found from databse")
+       
+        # Adding user to notes as collaborators.
+        for user in user_data:
+            note.collaborators[user['id']] = {"email" : user["email"], "access" : collab_data.access}
+            logger.info(f"Adding collaborators to notes {note.collaborators}")
+        flag_modified(note, "collaborators")    
+    
+        db.commit()
+        db.refresh(note)
+        logger.info("Chages are made and saved in database")
+
+        RedisUtils.save(key=f"user_{user_id}", field=f"note_{note.id}", value=note.to_dict)
+        logger.info(f"Collaborator {note.collaborators} added successfully to cache with note {note.id} for user {user_id}.")
+
+        # Return the success message
+        return{
+            "Message" : "Collaborators added successfully.",
+            "status" : "Success",
+            "Data" : note.collaborators
+        }
+    
+    except Exception as error:
+        logger.error(f"Unable to add collaborators to note ID : {collab_data.note_id} for user ID : {user_id} ")
+        raise HTTPException(status_code=400, detail=f"Unable to add collaborators : {error}")
+
+
+# Remove collaboraotrs form notes. 
+@app.patch('/notes/remove-collaborators')
+def remove_collaborators(request: Request, collab_data: RemoveCollaborators, db: Session = Depends(get_db)):
+    """
+    Description:
+    This function is used for removing collaborators from notes
+    Parameters:
+    request : The incoming request object.
+    collab_data : A RemoveCollaborator schema add to access user ids.
+    db : The database session dependency.
+    Return:
+    Return the success message with collaborator remove from notes
+    """
+    try:
+        # Fetching user id from request.state
+        user_id = request.state.user["id"]
+
+        # Fetching the note for the particular user based on note id provided by the user
+        note = db.query(Note).filter(Note.id == collab_data.note_id, Note.user_id == user_id).first()
+        logger.info(f"Fetching note based on Note ID: {collab_data.note_id} and User ID: {user_id}")
+
+        # If note is not found
+        if not note:
+            logger.info(f"Note not found for Note ID: {collab_data.note_id}")
+            raise HTTPException(status_code=404, detail=f"Note not found in database for User ID: {user_id} with Note ID: {collab_data.note_id}")
+
+        # Checking if collaborators exist in the note
+        if not note.collaborators:
+            logger.info(f"No collaborators found for Note ID: {collab_data.note_id}")
+            raise HTTPException(status_code=400, detail="No collaborators found to remove.")
+
+
+        # Removing specified users from collaborators
+        for remove_user_id in collab_data.user_ids:
+            # Check if the user is already a collaborator before trying to remove them
+            if str(remove_user_id) not in note.collaborators:
+                logger.info(f"User with ID {remove_user_id} is not a collaborator")
+                raise HTTPException(status_code=400, detail=f"User with ID {remove_user_id} is not a collaborator")
+
+            # Remove the user since they are confirmed to be a collaborator
+            note.collaborators.pop(str(remove_user_id))  
+            logger.info(f"Removed user with ID {remove_user_id} from collaborators")
+        
+        # Flagging collaborators field as modified
+        flag_modified(note, "collaborators")
+
+        # Commit the changes to the database
+        db.commit()
+        db.refresh(note)
+        logger.info("Changes saved in the database")
+
+        # Cache Invalidation or Update
+        cached_notes = RedisUtils.get(key= f"user_{user_id}")
+        
+        # Deleting collaborators form note in cache
+        if cached_notes:
+            for cached_note in cached_notes:
+                if cached_note["id"] == collab_data.note_id:
+                    cached_note["collaborators"] = note.collaborators  
+                    logger.info(f"Collaborators updated in cache for Note ID: {collab_data.note_id}")
+                    
+                    RedisUtils.save(key = f"user_{user_id}", field=f"note_{collab_data.note_id}", value=cached_note)
+                    logger.info(f"Updated cache for user {user_id} after removing collaborators")
+                    break
+        else:
+            logger.info(f"No cache found for user {user_id}")
+
+        # Return success message
+        return {
+            "Message": "Collaborators removed successfully.",
+            "status": "Success",
+            "Data": note.collaborators
+        }
+
+    except Exception as error:
+        logger.error(f"Unable to remove collaborators from Note ID: {collab_data.note_id} for User ID: {user_id} : {error}")
+        raise HTTPException(status_code=400, detail=f"Unable to remove collaborators: {error}")

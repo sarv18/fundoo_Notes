@@ -43,4 +43,8 @@ class Settings(BaseSettings):
     # Redbeat redis url
     redbeat_redis_url: str
     
+    # User services url
+    user_services_url: str
+    
+    
 settings = Settings()

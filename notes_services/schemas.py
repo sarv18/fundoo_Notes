@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import List
 
 # Schema for creating new note
 class CreateNote(BaseModel):
@@ -22,3 +23,22 @@ class CreateLabel(BaseModel):
     """
     name: str
     color: str
+
+# Pydantic model for the request body
+class AddNoteLabels(BaseModel):
+    """
+    Pydantic model for adding labels to notes.
+    """
+    label_ids: List[int]
+    
+    
+class AddCollaborators(BaseModel):
+    
+    note_id: int
+    user_ids: List[int]
+    access: str  # 'readonly' or 'readwrite'
+
+class RemoveCollaborators(BaseModel):
+    
+    note_id: int
+    user_ids: List[int]

@@ -5,8 +5,7 @@ from sqlalchemy import create_engine, Table, ForeignKey
 from settings import settings, logger
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
-from typing import List
-from pydantic import BaseModel
+from sqlalchemy.dialects.postgresql import JSON
 
 # Base class for all models
 Base = declarative_base()
@@ -64,6 +63,9 @@ class Note(Base):
     reminder = Column(DateTime, nullable=True)
     user_id = Column(BigInteger, nullable=False, index=True)
     
+    # Column for storing collaborators (as a JSON object)
+    collaborators = Column(JSON, default={})
+    
     # Establish many-to-many relationship with labels
     labels = relationship("Label", secondary=note_label_association, back_populates="notes")
     
@@ -106,9 +108,3 @@ class Label(Base):
     def to_dict(self):
         return {col.name: getattr(self, col.name) for col in self.__table__.columns}
     
-# Pydantic model for the request body
-class AddNoteLabels(BaseModel):
-    """
-    Pydantic model for adding labels to notes.
-    """
-    label_ids: List[int]
