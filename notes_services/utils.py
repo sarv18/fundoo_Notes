@@ -129,7 +129,20 @@ class RedisUtils():
         except Exception as e:
             logger.error(f"Error deleting data from Redis key: {key}, field: {field}. Error: {str(e)}")
             raise
-        
+     
+# class for creating and storing caches of middleware data in redis database = 2
+class RedisLogRequests():
+    
+    r = redis.Redis(host='localhost', port=6379, decode_responses=True, db = 2)
+
+    @classmethod
+    def save(cls, key, value):
+        cls.r.set(key, value)
+
+    @classmethod
+    def get(cls, key):
+        return cls.r.get(key)
+
         
 # Function to send reminder email asynchronously
 async def send_note_reminder_email(email, note_id, email_type):

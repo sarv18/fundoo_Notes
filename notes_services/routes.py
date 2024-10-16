@@ -1,21 +1,79 @@
-from fastapi import FastAPI, Depends, HTTPException, Security, Request
+import json
+from fastapi import FastAPI, Depends, HTTPException, Security, Request, Response
 from sqlalchemy.orm import Session
 from .models import Note, get_db, Label
 from .schemas import CreateNote, CreateLabel, AddNoteLabels, AddCollaborators, RemoveCollaborators
 from fastapi.security import APIKeyHeader
-from .utils import auth_user, RedisUtils
+from .utils import auth_user, RedisUtils, RedisLogRequests
 from settings import logger, settings
 from redbeat import RedBeatSchedulerEntry
 from celery.schedules import crontab
 from tasks import celery
 from sqlalchemy.orm.attributes import flag_modified
 import requests as http
-# from sqlalchemy import cast, JSON
-# import json
+from sqlalchemy import or_
 
 
 # Initialize FastAPI app with dependency
 app = FastAPI(dependencies= [Security(APIKeyHeader(name= "Authorization", auto_error= False)), Depends(auth_user)])
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    '''
+    Description:
+    This middleware logs HTTP requests in your FastAPI application and 
+    tracks how many times each API endpoint has been called for a given HTTP method (e.g., GET, POST, PUT, DELETE). 
+    Parameters:
+    request: An instance of Request from FastAPI, representing the incoming HTTP request.
+    call_next: A function that allows the middleware to pass the request to the next handler.
+    Returns:
+    response: The Response object returned by the next middleware or endpoint handler after processing the request.
+    '''
+    
+    method = request.method  # e.g., GET, POST, etc.
+    path = str(request.url.path)  # The requested endpoint
+    
+    # Initialize Redis log request handler
+    redis_instance = RedisLogRequests()
+
+    try:
+        # Fetch existing logs from Redis
+        logger.info(f"Fetching request logs for method: {method}")
+        request_log = redis_instance.get(key=method)
+        
+        # If existing log is not present, create a new log
+        if not request_log:
+            logger.info(f"No existing logs found for method: {method}. Creating new log.")
+            request_log = {}
+        else:
+            request_log = json.loads(request_log)
+        
+        # Update the request count for the path
+        if path in request_log:
+            request_log[path] += 1
+        else:
+            request_log[path] = 1
+        
+        # Save the updated log back to Redis
+        logger.info(f"Updating request log for method: {method}, path: {path}")
+        redis_instance.save(key=method, value=json.dumps(request_log))
+    
+    except Exception as e:
+        # Log any Redis or other exceptions
+        logger.error(f"Error occurred during Redis operation or processing: {e}")
+        return Response(content="Internal server error. Please try again later.", status_code=500)
+
+    # Continue processing the request
+    try:
+        response = await call_next(request)
+        logger.info(f"Request processed successfully for path: {path}")
+    except Exception as e:
+        # Log and handle errors that occur during request processing
+        logger.error(f"Error occurred while processing request for path: {path}: {e}")
+        return Response(content="Internal server error. Please try again later.", status_code=500)
+
+    return response
+
 
 @app.get("/")
 def read_root():
@@ -106,8 +164,8 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
         user_id = request.state.user["id"]
 
         # Check Redis cache for notes
-        notes_data = RedisUtils.get(key=f"user_{user_id}")
-        
+        # notes_data = RedisUtils.get(key=f"user_{user_id}")
+        notes_data = None
         logger.info(f"Notes fetched from cache for user {user_id}")
         source = "cache"
 
@@ -116,12 +174,8 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
             source = "database"
 
             # Query to get all notes for the user, eager load labels
+            # notes = db.query(Note).filter(or_(Note.user_id == user_id, Note.collaborators.contains({f"{user_id}": None}) )).all()
             notes = db.query(Note).filter(Note.user_id == user_id).all()
-
-            # notes = db.query(Note).filter(
-            #     (Note.user_id == user_id) |  # Owned by user
-            #     (cast(Note.collaborators, JSON).op('@>')(json.dumps({str(user_id): True})))  # Collaborator
-            # ).all()
             
             if not notes:
                 # If no notes found in the database

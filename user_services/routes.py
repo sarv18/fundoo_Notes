@@ -22,7 +22,7 @@ def read_root():
     return {"message": "Welcome to the Fundoo Notes API!"}
 
 # Register a new user
-@app.post("/register")
+@app.post("/register", status_code= 201)
 def register_user(request: Request, user: UserRegistrationSchema,  db: Session = Depends(get_db)):
     '''
     Discription: Registers a new user after validating the input, checking if the user exists, 
