@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, Table, ForeignKey
 from settings import settings, logger
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSONB
 
 # Base class for all models
 Base = declarative_base()
@@ -64,7 +64,7 @@ class Note(Base):
     user_id = Column(BigInteger, nullable=False, index=True)
     
     # Column for storing collaborators (as a JSON object)
-    collaborators = Column(JSON, default={})
+    collaborators = Column(JSONB, default={})
     
     # Establish many-to-many relationship with labels
     labels = relationship("Label", secondary=note_label_association, back_populates="notes")

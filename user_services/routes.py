@@ -86,7 +86,7 @@ def register_user(request: Request, user: UserRegistrationSchema,  db: Session =
 
 
 # User login
-@app.post("/login")
+@app.post("/login", status_code= 201)
 def login_user(user: UserLoginSchema, db: Session = Depends(get_db)):
     '''
     Discription:  Logs in a user by verifying their email and password against the database, 
@@ -100,6 +100,7 @@ def login_user(user: UserLoginSchema, db: Session = Depends(get_db)):
         # Check if the user exists in the database by email
         db_user = db.query(User).filter(User.email == user.email).first()
         
+        # Handle invalid email or password
         if not db_user or not verify_password(user.password, db_user.password):
             logger.warning(f"Invalid login attempt for email: {user.email}")
             raise HTTPException(status_code=400, detail="Invalid email or password")
@@ -232,7 +233,7 @@ def auth_user(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
     
 
-@app.get('/users', status_code=200, include_in_schema= False)
+@app.get('/users', status_code=200, include_in_schema= True)
 def get_users(user_ids : List[int] = Query([]), db : Session = Depends(get_db)):
     '''
     Description:

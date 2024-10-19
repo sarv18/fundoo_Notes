@@ -87,7 +87,7 @@ def read_root():
 
 
 # CREATE Note
-@app.post("/notes/")
+@app.post("/notes/", status_code= 201)
 def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -148,7 +148,7 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
 
 
 # GET all notes
-@app.get("/notes/")
+@app.get("/notes/", status_code= 200)
 def get_notes(request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -164,7 +164,7 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
         user_id = request.state.user["id"]
 
         # Check Redis cache for notes
-        # notes_data = RedisUtils.get(key=f"user_{user_id}")
+        notes_data = RedisUtils.get(key=f"user_{user_id}")
         notes_data = None
         logger.info(f"Notes fetched from cache for user {user_id}")
         source = "cache"
@@ -174,8 +174,7 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
             source = "database"
 
             # Query to get all notes for the user, eager load labels
-            # notes = db.query(Note).filter(or_(Note.user_id == user_id, Note.collaborators.contains({f"{user_id}": None}) )).all()
-            notes = db.query(Note).filter(Note.user_id == user_id).all()
+            notes = db.query(Note).filter(or_(Note.user_id == user_id, Note.collaborators.has_key(f"{user_id}"))).all()
             
             if not notes:
                 # If no notes found in the database
@@ -203,7 +202,7 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
 
     except Exception as e:
         logger.error(f"Failed to get all notes for user ID: {user_id}. Error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to fetch notes")
+        raise HTTPException(status_code=404, detail="Failed to fetch notes")
 
 
 # UPDATE Note
@@ -260,14 +259,18 @@ def update_note(request: Request, note_id: int, updated_note: CreateNote, db: Se
             "status": "success",
             "data": note
         }
-        
+    
+    # Re-raise known HTTP exceptions like 404
+    except HTTPException as http_exc:
+        raise http_exc      
+    
     except Exception as e:
         logger.error(f"Error updating note {note_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to update note")
 
 
 # DELETE Note
-@app.delete("/notes/{note_id}")
+@app.delete("/notes/{note_id}", status_code= 200)
 def delete_note(request: Request, note_id: int, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -295,6 +298,11 @@ def delete_note(request: Request, note_id: int, db: Session = Depends(get_db)):
             "message": "Note deleted successfully",
             "status": "success"
         }
+        
+    # Re-raise known HTTP exceptions like 404
+    except HTTPException as http_exc:
+        raise http_exc
+    
     except Exception as e:
         logger.error(f"Error deleting note {note_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete note")
@@ -690,7 +698,7 @@ def remove_labels_from_note(request: Request, label_data: AddNoteLabels, note_id
     
     
 # ADD Collaborator to notes    
-@app.patch('/notes/add-collaborators')
+@app.patch('/notes/add-collaborators', status_code= 200)
 def add_collaborators(request : Request, collab_data : AddCollaborators, db : Session = Depends(get_db)):
     """
     Description:
@@ -708,7 +716,7 @@ def add_collaborators(request : Request, collab_data : AddCollaborators, db : Se
 
         # Fetching note for particular user based on note id provided by user
         note = db.query(Note).filter(Note.id == collab_data.note_id, Note.user_id == user_id).first()
-        logger.info(f"Feteching note based Note ID : {collab_data.note_id} and user ID : {user_id}")
+        logger.info(f"Fetching note based Note ID : {collab_data.note_id} and user ID : {user_id}")
 
         # If note not found
         if not note:
@@ -720,7 +728,7 @@ def add_collaborators(request : Request, collab_data : AddCollaborators, db : Se
             logger.info(f"User ID {user_id} cannot add themselves as a collaborator.")
             raise HTTPException(status_code=400, detail="You cannot add yourself as a collaborator.") 
         
-        # Making HTTP request to user_Services to validate the users 
+        # Making HTTP request to user_services to validate the users 
         user_service_url = settings.user_services_url
         response = http.get(user_service_url, params = {"user_ids" : collab_data.user_ids})
        
@@ -731,7 +739,7 @@ def add_collaborators(request : Request, collab_data : AddCollaborators, db : Se
         
         # Getting user data in json format form response  
         user_data = response.json()["data"]
-
+        
         # Checking for all user data is retrived from user services or not
         if len(user_data) != len(collab_data.user_ids):
             logger.info("Some of the users are not found from database")
@@ -757,13 +765,17 @@ def add_collaborators(request : Request, collab_data : AddCollaborators, db : Se
             "Data" : note.collaborators
         }
     
+    # Re-raise known HTTP exceptions like 404
+    except HTTPException as http_exc:
+        raise http_exc
+    
     except Exception as error:
         logger.error(f"Unable to add collaborators to note ID : {collab_data.note_id} for user ID : {user_id} ")
         raise HTTPException(status_code=400, detail=f"Unable to add collaborators : {error}")
 
 
 # Remove collaboraotrs form notes. 
-@app.patch('/notes/remove-collaborators')
+@app.patch('/notes/remove-collaborators', status_code=200)
 def remove_collaborators(request: Request, collab_data: RemoveCollaborators, db: Session = Depends(get_db)):
     """
     Description:
@@ -835,6 +847,10 @@ def remove_collaborators(request: Request, collab_data: RemoveCollaborators, db:
             "status": "Success",
             "Data": note.collaborators
         }
+
+    # Re-raise known HTTP exceptions like 404
+    except HTTPException as http_exc:
+        raise http_exc
 
     except Exception as error:
         logger.error(f"Unable to remove collaborators from Note ID: {collab_data.note_id} for User ID: {user_id} : {error}")
