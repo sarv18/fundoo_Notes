@@ -8,12 +8,24 @@ from settings import settings, logger
 from tasks import send_email
 from sqlalchemy.exc import SQLAlchemyError
 from typing import List
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+# Initialize the Limiter
+limiter = Limiter(key_func= get_remote_address)
 
 # Initialize FastAPI app
 app = FastAPI()
 
+# Register the rate limit exception handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Set the rate limit to 5 requests per minute
 @app.get("/")
-def read_root():
+@limiter.limit("5/minute")  
+def read_root(request: Request):
     '''
     Description: This is the handler function that gets called when a request is made to the root endpoint
     Parameters: None
@@ -23,6 +35,7 @@ def read_root():
 
 # Register a new user
 @app.post("/register", status_code= 201)
+@limiter.limit("100/minute")  
 def register_user(request: Request, user: UserRegistrationSchema,  db: Session = Depends(get_db)):
     '''
     Discription: Registers a new user after validating the input, checking if the user exists, 
@@ -87,7 +100,8 @@ def register_user(request: Request, user: UserRegistrationSchema,  db: Session =
 
 # User login
 @app.post("/login", status_code= 201)
-def login_user(user: UserLoginSchema, db: Session = Depends(get_db)):
+@limiter.limit("100/minute")
+def login_user(request: Request, user: UserLoginSchema, db: Session = Depends(get_db)):
     '''
     Discription:  Logs in a user by verifying their email and password against the database, 
     returning a success message if they match.
@@ -128,7 +142,8 @@ def login_user(user: UserLoginSchema, db: Session = Depends(get_db)):
 
 
 @app.get("/verify/{token}")
-def verify_registered_user(token: str, db: Session = Depends(get_db)):
+@limiter.limit("100/minute")
+def verify_registered_user(request: Request, token: str, db: Session = Depends(get_db)):
     '''
     Description: Verifies a user's email by decoding the token and marking the user as verified.
     Parameters: 
@@ -182,7 +197,8 @@ def verify_registered_user(token: str, db: Session = Depends(get_db)):
 
 
 @app.get("/user/{token}", status_code= 200, include_in_schema= False)
-def auth_user(token: str, db: Session = Depends(get_db)):
+@limiter.limit("100/minute")
+def auth_user(request: Request, token: str, db: Session = Depends(get_db)):
     '''
     Description: Decodes the JWT token and fetches the authenticated user's data from the database.
     Parameters: 
@@ -233,8 +249,9 @@ def auth_user(token: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
     
 
-@app.get('/users', status_code=200, include_in_schema= True)
-def get_users(user_ids : List[int] = Query([]), db : Session = Depends(get_db)):
+@app.get('/users', status_code=200, include_in_schema= False)
+@limiter.limit("100/minute")
+def get_users(request: Request, user_ids : List[int] = Query([]), db : Session = Depends(get_db)):
     '''
     Description:
     This API retrieves user data for the specified user IDs.

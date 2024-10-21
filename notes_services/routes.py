@@ -12,10 +12,19 @@ from tasks import celery
 from sqlalchemy.orm.attributes import flag_modified
 import requests as http
 from sqlalchemy import or_
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
+# Initialize the Limiter
+limiter = Limiter(key_func=get_remote_address)
 
 # Initialize FastAPI app with dependency
 app = FastAPI(dependencies= [Security(APIKeyHeader(name= "Authorization", auto_error= False)), Depends(auth_user)])
+
+# Register the rate limit exception handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -76,7 +85,8 @@ async def log_requests(request: Request, call_next):
 
 
 @app.get("/")
-def read_root():
+@limiter.limit("5/minute")
+def read_root(request: Request):
     '''
     Discription: This is the handler function that gets called when a request is made to the root endpoint
     Parameters: None
@@ -88,6 +98,7 @@ def read_root():
 
 # CREATE Note
 @app.post("/notes/", status_code= 201)
+@limiter.limit("100/minute")
 def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -149,6 +160,7 @@ def create_note(request: Request, note: CreateNote, db: Session = Depends(get_db
 
 # GET all notes
 @app.get("/notes/", status_code= 200)
+@limiter.limit("100/minute")
 def get_notes(request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -207,6 +219,7 @@ def get_notes(request: Request, db: Session = Depends(get_db)):
 
 # UPDATE Note
 @app.put("/notes/{note_id}")
+@limiter.limit("100/minute")
 def update_note(request: Request, note_id: int, updated_note: CreateNote, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -271,6 +284,7 @@ def update_note(request: Request, note_id: int, updated_note: CreateNote, db: Se
 
 # DELETE Note
 @app.delete("/notes/{note_id}", status_code= 200)
+@limiter.limit("100/minute")
 def delete_note(request: Request, note_id: int, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -310,6 +324,7 @@ def delete_note(request: Request, note_id: int, db: Session = Depends(get_db)):
     
 # PATCH API for Archiving a Note
 @app.patch("/notes/archive/{note_id}")
+@limiter.limit("100/minute")
 def toggle_archive(note_id: int, request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -346,6 +361,7 @@ def toggle_archive(note_id: int, request: Request, db: Session = Depends(get_db)
 
 # GET API for Retrieving All Archived Notes
 @app.get("/notes/archive")
+@limiter.limit("100/minute")
 def get_archived_notes(request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -374,6 +390,7 @@ def get_archived_notes(request: Request, db: Session = Depends(get_db)):
 
 # PATCH API for Trashing a Note
 @app.patch("/notes/trash/{note_id}")
+@limiter.limit("100/minute")
 def toggle_trash(note_id: int, request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -410,6 +427,7 @@ def toggle_trash(note_id: int, request: Request, db: Session = Depends(get_db)):
 
 # GET API for Retrieving All Trashed Notes
 @app.get("/notes/trash")
+@limiter.limit("100/minute")
 def get_trashed_notes(request: Request, db: Session = Depends(get_db)):
     '''
     Description: 
@@ -438,6 +456,7 @@ def get_trashed_notes(request: Request, db: Session = Depends(get_db)):
 
 # CREATE label
 @app.post("/labels/")
+@limiter.limit("100/minute")
 def create_label(request: Request, label: CreateLabel, db: Session = Depends(get_db)):
     '''
     Description:
@@ -471,6 +490,7 @@ def create_label(request: Request, label: CreateLabel, db: Session = Depends(get
     
 # GET labels
 @app.get("/labels/")
+@limiter.limit("100/minute")
 def get_labels(request: Request, db: Session = Depends(get_db)):
     '''
     Description:
@@ -504,7 +524,8 @@ def get_labels(request: Request, db: Session = Depends(get_db)):
     
 # UPDATE label
 @app.put("/labels/{label_id}")
-def update_label(label_id: int, label: CreateLabel, db: Session= Depends(get_db)):
+@limiter.limit("100/minute")
+def update_label(request: Request, label_id: int, label: CreateLabel, db: Session= Depends(get_db)):
     '''
     Description:
     This function updates an existing label's details (name, color) based on its ID. If the label is not found, a 404 error is raised.
@@ -540,7 +561,8 @@ def update_label(label_id: int, label: CreateLabel, db: Session= Depends(get_db)
     
 # DELETE label
 @app.delete("/labels/{label_id}")
-def delete_label(label_id: int, db: Session = Depends(get_db)):
+@limiter.limit("100/minute")
+def delete_label(request: Request, label_id: int, db: Session = Depends(get_db)):
     '''
     Description:
     This function deletes a label by its ID. If the label is not found, a 404 error is raised.
@@ -574,6 +596,7 @@ def delete_label(label_id: int, db: Session = Depends(get_db)):
 
 # ADD Lebels to a note
 @app.post("/notes/{note_id}/add-labels/")
+@limiter.limit("100/minute")
 def add_labels_to_note( request: Request, label_data: AddNoteLabels, note_id: int, db: Session = Depends(get_db)):
     """
     Description:
@@ -630,6 +653,7 @@ def add_labels_to_note( request: Request, label_data: AddNoteLabels, note_id: in
 
 # REMOVE Lebels from note
 @app.delete("/notes/{note_id}/remove-labels/")
+@limiter.limit("100/minute")
 def remove_labels_from_note(request: Request, label_data: AddNoteLabels, note_id: int, db: Session = Depends(get_db)):
     """
     Description:
@@ -699,6 +723,7 @@ def remove_labels_from_note(request: Request, label_data: AddNoteLabels, note_id
     
 # ADD Collaborator to notes    
 @app.patch('/notes/add-collaborators', status_code= 200)
+@limiter.limit("100/minute")
 def add_collaborators(request : Request, collab_data : AddCollaborators, db : Session = Depends(get_db)):
     """
     Description:
@@ -776,6 +801,7 @@ def add_collaborators(request : Request, collab_data : AddCollaborators, db : Se
 
 # Remove collaboraotrs form notes. 
 @app.patch('/notes/remove-collaborators', status_code=200)
+@limiter.limit("100/minute")
 def remove_collaborators(request: Request, collab_data: RemoveCollaborators, db: Session = Depends(get_db)):
     """
     Description:
